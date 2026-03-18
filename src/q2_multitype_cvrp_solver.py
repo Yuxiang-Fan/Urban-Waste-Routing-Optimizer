@@ -108,7 +108,7 @@ class MultiFleetWasteOptimizer:
             return routes, total_dist / self.scale_dist
         return None, 0
 
-    # ------------------ 小运量垃圾 TSP 求解器 (新增：基于 有害垃圾.py) ------------------
+    # ------------------ 小运量垃圾 TSP 求解器  ------------------
     def solve_hazardous_tsp_cpsat(self, waste_name="有害垃圾", time_limit=10):
         print(f"\n[*] 正在调度 [{waste_name}] 专车 (CP-SAT 精确 TSP 模型)...")
         n = len(self.nodes)
