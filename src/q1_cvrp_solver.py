@@ -18,7 +18,7 @@ from itertools import combinations, permutations
 from ortools.sat.python import cp_model
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
-# 配置中文字体，支持图表中文字符显示 (衍生自 原始作图.py)
+# 配置中文字体，支持图表中文字符显示 
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -120,7 +120,6 @@ class UrbanWasteOptimizer:
     def solve_tsp_baseline(self):
         """
         求解单车遍历所有节点的旅行商问题 (TSP) 
-        作为项目的极限基线 (衍生自 一条.py)
         """
         print("\n[*] Calculating Single-Vehicle TSP Baseline (Infinite Capacity)...")
         data = {
@@ -248,13 +247,13 @@ if __name__ == "__main__":
     start_time = time.time()
     optimizer = UrbanWasteOptimizer(capacity=5, metric='euclidean')
     
-    # 1. 求解单车无容量限制的基线 (对应 一条.py)
+    # 1. 求解单车无容量限制的基线
     tsp_route, tsp_dist = optimizer.solve_tsp_baseline()
     
     # 2. 动态车辆数全局寻优
     best_routes = optimizer.sweep_ortools_routing(min_vehicles=5, max_vehicles=10, time_limit_per_sweep=3)
     
-    # 3. 针对其中最长的一条路线进行详细特写绘图 (对应 原始作图.py)
+    # 3. 针对其中最长的一条路线进行详细特写绘图
     if best_routes:
         longest_route = max(best_routes, key=lambda r: optimizer.evaluate_route(r)[0])
         longest_dist, _ = optimizer.evaluate_route(longest_route)
