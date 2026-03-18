@@ -1,49 +1,43 @@
-# Urban Waste Collection & Routing Optimizer
+# Urban Waste Collection and Routing Optimization System
 
-A multi-stage Operations Research (OR) project designed to optimize urban waste collection logistics. This repository implements a series of solvers—ranging from classic heuristics to advanced Location-Routing Problems (LRP)—using **Google OR-Tools**, **Matplotlib**, and **Python**.
+This repository provides an implementation of optimization algorithms for urban waste collection logistics within an Operations Research (OR) framework. The project explores a variety of solvers—ranging from classical heuristics to the Location-Routing Problem (LRP)—utilizing **Google OR-Tools**, **Matplotlib**, and **Python**.
 
----
+## Project Overview
 
-## 🚀 Project Overview
+This implementation addresses logistical challenges in urban waste management by optimizing vehicle trajectories and facility selection. The project is structured into three progressive modules:
 
-This project tackles the increasing pressure on urban waste management by optimizing vehicle routes and facility selection. It is structured into three progressive modules of increasing complexity:
+### 1. Capacitated Vehicle Routing Problem (CVRP)
+This module addresses the standard CVRP for 30 collection points.
+* **Algorithmic Sequence**: Implementation of the Clarke-Wright Savings heuristic for initial solutions, followed by 2-opt local search and the Google OR-Tools CP-SAT solver for global optimization.
+* **Performance Analysis**: The implementation demonstrates a reduction in total travel distance from a heuristic baseline of **1157.19 km** to a calculated optimum of **1108.18 km**.
+* **Spatial Modeling**: Incorporates Manhattan distance metrics to approximate grid-based urban block structures, resulting in a calculated path of 1442 km.
 
-### Phase 1: Basic CVRP Optimization
-Solves the standard Capacitated Vehicle Routing Problem (CVRP) for 30 collection points.
-* **Algorithm Chain**: Clarke-Wright Savings (Initial Solution) ➔ 2-opt Heuristic (Local Optimization) ➔ OR-Tools CP-SAT (Exact Global Search).
-* **Key Metric**: Successfully reduced total daily travel distance from an initial heuristic result of **1157.19 km** to a global optimum of **1108.18 km**.
-* **Real-world Robustness**: Includes an evaluator for **Manhattan Distance** to simulate grid-based urban blocks, resulting in a 1442 km path.
+### 2. Heterogeneous Constraints and Multi-Fleet Management
+This module addresses the distribution of four distinct waste categories (Food, Recyclable, Other, and Hazardous) through a hybrid solving strategy.
+* **High-Volume Waste**: Utilizes the OR-Tools Routing Model under dual constraints of vehicle capacity and maximum operational distance.
+* **Hazardous Waste**: Modeled as a Pure Traveling Salesman Problem (TSP) and addressed using a CP-SAT model incorporating Miller-Tucker-Zemlin (MTZ) subtour elimination.
 
-### Phase 2: Multi-Fleet & Heterogeneous Constraints
-Addresses the complexity of four distinct waste types (Food, Recyclable, Other, and Hazardous) with a hybrid solving strategy.
-* **High-Volume Waste**: Implements the OR-Tools Routing Model with dual constraints: **Vehicle Capacity** and **Maximum Travel Distance**.
-* **Hazardous Waste**: Since volume is low, this is treated as a Pure TSP and solved using an exact **CP-SAT model with MTZ (Miller-Tucker-Zemlin)** subtour elimination.
+### 3. Location-Routing Problem (LRP) and Asymmetric Networks
+The third module incorporates facility selection and non-uniform road conditions.
+* **Facility Location**: Employs CP-SAT to identify an optimal subset of transfer stations based on fixed construction costs and transportation distances.
+* **Asymmetric Routing**: Accounts for directed movement in urban environments where $D(i,j) \neq D(j,i)$, simulating one-way streets and traffic constraints.
+* **Visualization**: Implementation of a directed-graph plotter to illustrate vehicle flow within asymmetric networks.
 
-### Phase 3: Location-Routing Problem (LRP) & Asymmetric Networks
-The most advanced module, handling facility selection and non-standard road conditions.
-* **Facility Location**: Uses CP-SAT to select the optimal subset of transfer stations based on construction costs and distance.
-* **Asymmetric Routing**: Accounts for one-way streets and time-dependent congestion where $D(i,j) \neq D(j,i)$.
-* **Visualization**: Features a directed-graph plotter to show the flow of garbage trucks through one-way urban networks.
+## Technical Characteristics
 
----
+* **Hybrid Optimization**: Integrates meta-heuristics (Guided Local Search) with Constraint Programming to balance computational efficiency and precision.
+* **Asymmetric Matrix Support**: Capable of modeling directed traffic restrictions.
+* **Data Scaling**: Implements automated float-to-integer scaling to facilitate high-precision solving within the CP-SAT environment.
+* **Visualization Implementation**: Custom scripts for route animation, multi-fleet color coding, and directed path representation.
 
-## 🛠️ Technical Highlights
-
-* **Hybrid Solving**: Combines the speed of meta-heuristics (Guided Local Search) with the precision of Constraint Programming.
-* **Asymmetric Matrix Support**: Capable of modeling real-world traffic restrictions.
-* **Dynamic Scaling**: Automatically handles float-to-integer scaling for high-precision CP-SAT solving.
-* **Advanced Visualization**: Custom Matplotlib scripts for route animation, multi-fleet color coding, and directed pathing.
-
----
-
-## 📂 Repository Structure
+## 📁 Repository Structure
 
 ```text
 .
-├── data/                 # Raw Excel data from urban logistics sensors
+├── data/                 # Logistics data including collection point coordinates
 ├── docs/                 # Technical reports and mathematical derivations (PDF)
 ├── src/                  
-│   ├── q1_cvrp_solver.py           # Basic CVRP & Heuristic chain
-│   ├── q2_multitype_solver.py      # Multi-fleet & Hybrid strategy
-│   └── q3_lrp_asymmetric_solver.py # LRP & Directed graph optimization
+│   ├── q1_cvrp_solver.py           # CVRP and heuristic implementation
+│   ├── q2_multitype_solver.py      # Multi-fleet and hybrid strategy logic
+│   └── q3_lrp_asymmetric_solver.py # LRP and directed graph optimization
 └── README.md
