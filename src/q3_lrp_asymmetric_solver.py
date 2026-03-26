@@ -1,10 +1,8 @@
 """
-Urban Waste Collection VRP Optimizer - Question 3 (Ultimate LRP Edition)
-Author: Yuxiang Fan
-Description: Solves the Capacitated Location-Routing Problem (CLRP) with Asymmetric Networks.
-Stage 1: Facility Location (Transfer Station Selection) via CP-SAT.
-Stage 2: Asymmetric CVRP (Directed Graph) via OR-Tools Routing Model.
-Includes directed arrow visualization for asymmetric paths.
+城市固体废弃物选址-路径问题优化系统
+本模块实现两阶段优化策略：
+第一阶段：利用 CP-SAT 求解带容量约束的设施选址模型，确定中转站开启状态及节点分配。
+第二阶段：利用 OR-Tools 路径模型在非对称有向路网上，为各中转站规划清运路线。
 """
 
 import math
@@ -14,16 +12,21 @@ import matplotlib.pyplot as plt
 from ortools.sat.python import cp_model
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
+# 配置绘图字体
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
-class UrbanWasteLRPOptimizer:
+class WasteLRPOptimizer:
     def __init__(self, seed=42):
-        self.scale_waste = 10     
+        """
+        初始化 LRP 优化器
+        :param seed: 随机种子，用于复现非对称路网环境
+        """
+        self.scale_load = 1000     
         self.scale_dist = 1000    
-        random.seed(seed) # 固定随机种子以保证非对称路网的可复现性
+        random.seed(seed)
         
-        # 1. 垃圾收集点集合 (Collection Points)
+        # 定义垃圾收集点数据
         self.collection_points = [
             {"id": 1, "x": 12, "y": 8, "waste": 1.2}, {"id": 2, "x": 5, "y": 15, "waste": 2.3},
             {"id": 3, "x": 20, "y": 30, "waste": 1.8}, {"id": 4, "x": 25, "y": 10, "waste": 3.1},
@@ -42,7 +45,7 @@ class UrbanWasteLRPOptimizer:
             {"id": 29, "x": 35, "y": 10, "waste": 3.7}, {"id": 30, "x": 22, "y": 35, "waste": 1.9}
         ]
         
-        # 2. 候选处理中转站 (Candidate Transfer Stations)
+        # 定义候选垃圾中转站数据
         self.candidate_stations = {
             101: {"x": 50, "y": 50, "capacity": 25, "cost": 500},
             102: {"x": 60, "y": 60, "capacity": 30, "cost": 600},
@@ -51,7 +54,7 @@ class UrbanWasteLRPOptimizer:
             105: {"x": 90, "y": 90, "capacity": 15, "cost": 400}
         }
         
-        # 建立全局索引字典
+        # 整合所有节点信息
         self.all_nodes = {p["id"]: {"x": p["x"], "y": p["y"], "waste": p["waste"]} for p in self.collection_points}
         for ts_id, ts_data in self.candidate_stations.items():
             self.all_nodes[ts_id] = {"x": ts_data["x"], "y": ts_data["y"], "waste": 0}
@@ -61,7 +64,7 @@ class UrbanWasteLRPOptimizer:
     def _build_asymmetric_matrix(self):
         """
         构建非对称距离矩阵。
-        模拟城市道路中的单行道或拥堵：D(i,j) 不一定等于 D(j,i)。
+        模拟城市环境中的单行道或单向交通拥堵，即 D(i,j) 与 D(j,i) 不相等。
         """
         dist_matrix = {}
         nodes = list(self.all_nodes.keys())
@@ -70,48 +73,49 @@ class UrbanWasteLRPOptimizer:
                 if i == j:
                     dist_matrix[(i, j)] = 0.0
                 else:
+                    # 计算基础欧氏距离
                     base_dist = math.hypot(self.all_nodes[i]["x"] - self.all_nodes[j]["x"], 
                                            self.all_nodes[i]["y"] - self.all_nodes[j]["y"])
-                    # 模拟 10% 的路段存在单向拥堵或绕行，距离增加 30%~80%
-                    asymmetry_factor = 1.0
+                    # 模拟部分路段存在非对称特征，增加 30% 到 80% 的行驶成本
+                    factor = 1.0
                     if random.random() < 0.1:
-                        asymmetry_factor = random.uniform(1.3, 1.8)
-                    dist_matrix[(i, j)] = base_dist * asymmetry_factor
+                        factor = random.uniform(1.3, 1.8)
+                    dist_matrix[(i, j)] = base_dist * factor
         return dist_matrix
 
-    # ================== 第一阶段：CP-SAT 设施选址 (Facility Location) ==================
-    def select_transfer_stations(self):
+    def run_facility_location(self):
         """
-        根据各中转站容量和建造成本，将垃圾收集点分配给最优的中转站组合。
-        返回: 选中的中转站列表，以及分配给各中转站的收集点列表。
+        第一阶段：基于 CP-SAT 的设施选址优化。
+        目标是在满足中转站载荷能力的前提下，最小化建设成本与分配距离成本之和。
         """
-        print("\n[*] 正在运行第一阶段：CP-SAT 容量约束设施选址模型...")
+        print("执行第一阶段：中转站选址与节点分配...")
         model = cp_model.CpModel()
         
         points = [p["id"] for p in self.collection_points]
         stations = list(self.candidate_stations.keys())
         
-        # 决策变量：y[s] 表示是否启用中转站 s
+        # 决策变量：y 为布尔变量，表示是否启用该中转站
         y = {s: model.NewBoolVar(f"y_{s}") for s in stations}
-        # 决策变量：x[p, s] 表示收集点 p 是否分配给中转站 s
+        # 决策变量：x 为分配变量，表示收集点是否由该中转站负责
         x = {(p, s): model.NewBoolVar(f"x_{p}_{s}") for p in points for s in stations}
         
-        # 1. 约束：每个收集点必须且只能分配给一个启用的中转站
+        # 每个收集点必须分配给且仅分配给一个已启用的中转站
         for p in points:
             model.AddExactlyOne([x[(p, s)] for s in stations])
             for s in stations:
                 model.AddImplication(x[(p, s)], y[s])
                 
-        # 2. 约束：中转站容量限制
+        # 中转站容量约束：分配的垃圾总量不能超过该站额定容量
         for s in stations:
-            capacity_int = int(self.candidate_stations[s]["capacity"] * self.scale_waste)
-            model.Add(sum(int(self.all_nodes[p]["waste"] * self.scale_waste) * x[(p, s)] for p in points) <= capacity_int * y[s])
+            cap_int = int(self.candidate_stations[s]["capacity"] * self.scale_load)
+            point_loads = [int(self.all_nodes[p]["waste"] * self.scale_load) * x[(p, s)] for p in points]
+            model.Add(sum(point_loads) <= cap_int * y[s])
             
-        # 3. 目标：最小化距离成本 + 建设成本
-        dist_cost = sum(int(self.asymmetric_dist_matrix[(p, s)] * self.scale_dist) * x[(p, s)] 
-                        for p in points for s in stations)
-        build_cost = sum(int(self.candidate_stations[s]["cost"] * self.scale_dist) * y[s] for s in stations)
-        model.Minimize(dist_cost + build_cost)
+        # 目标函数：最小化总运输距离 + 设施建设固定成本
+        transport_dist = sum(int(self.asymmetric_dist_matrix[(p, s)] * self.scale_dist) * x[(p, s)] 
+                             for p in points for s in stations)
+        fixed_cost = sum(int(self.candidate_stations[s]["cost"] * self.scale_dist) * y[s] for s in stations)
+        model.Minimize(transport_dist + fixed_cost)
         
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = 10
@@ -124,143 +128,128 @@ class UrbanWasteLRPOptimizer:
                 for s in active_stations:
                     if solver.Value(x[(p, s)]) == 1:
                         assignments[s].append(p)
-            print(f"[+] 选址完成！启用的中转站: {active_stations}")
-            for s, assigned_pts in assignments.items():
-                load = sum(self.all_nodes[p]["waste"] for p in assigned_pts)
-                print(f"    -> 中转站 {s} (负载: {load:.2f}/{self.candidate_stations[s]['capacity']}吨) 负责节点: {assigned_pts}")
+            
+            print(f"选址决策完成。启用站点: {active_stations}")
             return assignments
-        else:
-            print("[-] 选址失败，检查约束。")
-            return None
+        return None
 
-    # ================== 第二阶段：非对称路网 VRP (Asymmetric CVRP) ==================
-    def solve_asymmetric_routing_for_station(self, station_id, assigned_points, vehicle_capacity=8):
+    def solve_routing_for_station(self, station_id, assigned_points, vehicle_cap=8):
         """
-        为某个激活的中转站及其负责的节点，在非对称路网上规划车队路线。
+        第二阶段：为各中转站所辖节点进行非对称 CVRP 路径规划。
         """
-        # 构建局部映射（OR-Tools 需要从 0 开始连续的索引）
-        local_nodes = [station_id] + assigned_points
-        num_local_nodes = len(local_nodes)
+        # 建立局部索引映射
+        nodes_list = [station_id] + assigned_points
+        n_count = len(nodes_list)
         
-        # 构建局部非对称距离矩阵
-        local_dist_matrix = [[int(self.asymmetric_dist_matrix[(i, j)] * self.scale_dist) for j in local_nodes] for i in local_nodes]
-        local_demands = [0] + [int(self.all_nodes[p]["waste"] * self.scale_dist) for p in assigned_points]
+        # 提取非对称距离矩阵并放大
+        dist_mtx = [[int(self.asymmetric_dist_matrix[(i, j)] * self.scale_dist) for j in nodes_list] for i in nodes_list]
+        demands = [0] + [int(self.all_nodes[p]["waste"] * self.scale_load) for p in assigned_points]
         
-        num_vehicles = len(assigned_points) # 最大允许车辆数
-        manager = pywrapcp.RoutingIndexManager(num_local_nodes, num_vehicles, 0)
+        # 初始化管理器与模型，起始点设定为中转站
+        manager = pywrapcp.RoutingIndexManager(n_count, len(assigned_points), 0)
         routing = pywrapcp.RoutingModel(manager)
 
-        def distance_callback(from_index, to_index):
-            return local_dist_matrix[manager.IndexToNode(from_index)][manager.IndexToNode(to_index)]
-        transit_callback_index = routing.RegisterTransitCallback(distance_callback)
-        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+        def distance_callback(from_idx, to_idx):
+            return dist_mtx[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
+        
+        transit_callback_idx = routing.RegisterTransitCallback(distance_callback)
+        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_idx)
 
-        def demand_callback(from_index):
-            return local_demands[manager.IndexToNode(from_index)]
-        demand_callback_index = routing.RegisterUnaryTransitCallback(demand_callback)
+        def demand_callback(from_idx):
+            return demands[manager.IndexToNode(from_idx)]
+        
+        demand_callback_idx = routing.RegisterUnaryTransitCallback(demand_callback)
         routing.AddDimensionWithVehicleCapacity(
-            demand_callback_index, 0, [int(vehicle_capacity * self.scale_dist)] * num_vehicles, True, 'Capacity'
+            demand_callback_idx, 0, [int(vehicle_cap * self.scale_load)] * len(assigned_points), True, 'Capacity'
         )
 
-        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-        search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-        search_parameters.time_limit.FromSeconds(3) # 每个中转站分配 3 秒求解
+        search_params = pywrapcp.DefaultRoutingSearchParameters()
+        search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+        search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+        search_params.time_limit.FromSeconds(3)
 
-        solution = routing.SolveWithParameters(search_parameters)
+        solution = routing.SolveWithParameters(search_params)
 
         if solution:
             routes = []
-            for vehicle_id in range(num_vehicles):
-                index = routing.Start(vehicle_id)
-                route = []
-                while not routing.IsEnd(index):
-                    node_idx = manager.IndexToNode(index)
-                    route.append(local_nodes[node_idx])
-                    index = solution.Value(routing.NextVar(index))
-                route.append(local_nodes[manager.IndexToNode(index)]) # 回到中转站
-                if len(route) > 2:
-                    routes.append(route)
+            for v_id in range(len(assigned_points)):
+                idx = routing.Start(v_id)
+                path = []
+                while not routing.IsEnd(idx):
+                    path.append(nodes_list[manager.IndexToNode(idx)])
+                    idx = solution.Value(routing.NextVar(idx))
+                path.append(nodes_list[manager.IndexToNode(idx)])
+                if len(path) > 2:
+                    routes.append(path)
             return routes
         return []
 
-    # ================== 箭头可视化模块 (Directed Visualization) ==================
-    def plot_lrp_directed_network(self, all_routes, activated_stations):
-        """绘制包含带方向箭头的非对称路径和中转站状态的高级路网图"""
-        plt.figure(figsize=(14, 10))
+    def plot_asymmetric_lrp_network(self, routes_dict, active_hubs):
+        """
+        绘制 LRP 优化结果。
+        通过带箭头的有向边展示非对称路网的流向特征。
+        """
+        plt.figure(figsize=(12, 10))
         
-        # 1. 绘制普通收集点
-        x_pts = [p["x"] for p in self.collection_points]
-        y_pts = [p["y"] for p in self.collection_points]
-        plt.scatter(x_pts, y_pts, color='royalblue', s=40, zorder=3, label='收集点')
-        for p in self.collection_points:
-            plt.text(p["x"]+0.5, p["y"]+0.5, str(p["id"]), fontsize=8)
+        # 绘制收集点
+        px = [p["x"] for p in self.collection_points]
+        py = [p["y"] for p in self.collection_points]
+        plt.scatter(px, py, color='cornflowerblue', s=30, zorder=3, label='收集点')
 
-        # 2. 绘制中转站 (区分未启用和已启用)
-        for ts_id, ts_data in self.candidate_stations.items():
-            if ts_id in activated_stations:
-                plt.scatter(ts_data["x"], ts_data["y"], color='red', marker='^', s=250, zorder=5, edgecolors='black')
-                plt.text(ts_data["x"]+1, ts_data["y"]-1, f"HUB-{ts_id}", fontweight='bold', color='red')
+        # 绘制中转站
+        for s_id, s_data in self.candidate_stations.items():
+            if s_id in active_hubs:
+                plt.scatter(s_data["x"], s_data["y"], color='crimson', marker='^', s=200, zorder=5, label='已启用中转站' if s_id == active_hubs[0] else "")
+                plt.text(s_data["x"]+1, s_data["y"]+1, f"中转站-{s_id}", color='crimson', fontweight='bold')
             else:
-                plt.scatter(ts_data["x"], ts_data["y"], color='lightgray', marker='^', s=150, zorder=2)
-                
-        # 增加图例代理
-        plt.scatter([], [], color='red', marker='^', s=150, edgecolors='black', label='启用中转站')
-        plt.scatter([], [], color='lightgray', marker='^', s=150, label='未启用候选站')
+                plt.scatter(s_data["x"], s_data["y"], color='lightgrey', marker='^', s=100, zorder=2)
 
-        # 3. 绘制带箭头的有向路径 (展示非对称特征)
-        colors = ['#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-        color_idx = 0
+        # 绘制有向清运路径
+        color_cycle = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+        c_idx = 0
         
-        for ts_id, routes in all_routes.items():
-            for route in routes:
-                c = colors[color_idx % len(colors)]
-                for i in range(len(route) - 1):
-                    n1, n2 = route[i], route[i+1]
-                    x1, y1 = self.all_nodes[n1]["x"], self.all_nodes[n1]["y"]
-                    x2, y2 = self.all_nodes[n2]["x"], self.all_nodes[n2]["y"]
-                    # 使用 annotate 画箭头
+        for hub_id, routes in routes_dict.items():
+            for r in routes:
+                color = color_cycle[c_idx % len(color_cycle)]
+                for i in range(len(r) - 1):
+                    start_node, end_node = r[i], r[i+1]
+                    x1, y1 = self.all_nodes[start_node]["x"], self.all_nodes[start_node]["y"]
+                    x2, y2 = self.all_nodes[end_node]["x"], self.all_nodes[end_node]["y"]
+                    # 利用 annotate 函数绘制带箭头的实线，体现有向性
                     plt.annotate('', xy=(x2, y2), xytext=(x1, y1),
-                                 arrowprops=dict(arrowstyle="->", color=c, lw=1.5, alpha=0.8))
-                color_idx += 1
+                                 arrowprops=dict(arrowstyle="->", color=color, lw=1.2, alpha=0.6))
+                c_idx += 1
 
-        plt.title("问题三：多中转站选址与非对称路网有向路径规划 (LRP)", fontsize=16, fontweight='bold')
-        plt.xlabel("X 坐标 (km)")
-        plt.ylabel("Y 坐标 (km)")
-        plt.grid(True, linestyle='--', alpha=0.4)
-        plt.legend(loc='upper left', fontsize=10)
+        plt.title("选址-路径问题 (LRP) 优化方案可视化 - 非对称有向路网", fontsize=15)
+        plt.grid(True, linestyle=':', alpha=0.5)
+        plt.legend(loc='upper left')
         plt.show()
 
 if __name__ == "__main__":
-    start_time = time.time()
-    optimizer = UrbanWasteLRPOptimizer(seed=123)
+    start_timer = time.time()
+    lrp_solver = WasteLRPOptimizer(seed=123)
     
-    # 阶段 1：设施选址分配
-    station_assignments = optimizer.select_transfer_stations()
+    # 第一阶段：设施选址
+    station_map = lrp_solver.run_facility_location()
     
-    if station_assignments:
-        print("\n[*] 正在运行第二阶段：非对称路网下的多站点 VRP (Asymmetric CVRP)...")
-        all_final_routes = {}
-        total_lrp_distance = 0
+    if station_map:
+        print("执行第二阶段：基于局部子集的非对称路径规划...")
+        final_results = {}
+        total_dist_sum = 0
         
-        # 阶段 2：并行计算每个激活站点的子路线
-        for station_id, assigned_pts in station_assignments.items():
-            if not assigned_pts: continue
+        for hub, pts in station_map.items():
+            if not pts: continue
             
-            routes = optimizer.solve_asymmetric_routing_for_station(
-                station_id, assigned_pts, vehicle_capacity=8
-            )
-            all_final_routes[station_id] = routes
+            paths = lrp_solver.solve_routing_for_station(hub, pts)
+            final_results[hub] = paths
             
-            # 核算真实非对称距离
-            for r in routes:
-                r_dist = sum(optimizer.asymmetric_dist_matrix[(r[i], r[i+1])] for i in range(len(r)-1))
-                total_lrp_distance += r_dist
-                print(f"    [HUB-{station_id}] 路线: {r} (单向实测距离: {r_dist:.2f} km)")
+            # 统计实际行驶距离（基于非对称矩阵）
+            for p in paths:
+                d = sum(lrp_solver.asymmetric_dist_matrix[(p[i], p[i+1])] for i in range(len(p)-1))
+                total_dist_sum += d
+                print(f"中转站 {hub} 规划路径: {p}，实测距离: {d:.2f} km")
                 
-        print(f"\n[$$$] LRP 网络总实际行驶距离: {total_lrp_distance:.2f} km")
-        
-        # 阶段 3：高级有向图可视化
-        optimizer.plot_lrp_directed_network(all_final_routes, list(station_assignments.keys()))
+        print(f"\n系统总清运里程: {total_dist_sum:.2f} km")
+        lrp_solver.plot_asymmetric_lrp_network(final_results, list(station_map.keys()))
 
-    print(f"\n[+] Total Execution Time: {time.time() - start_time:.2f} seconds")
+    print(f"任务总执行耗时: {time.time() - start_timer:.2f} 秒")
